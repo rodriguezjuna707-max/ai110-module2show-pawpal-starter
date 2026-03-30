@@ -4,13 +4,50 @@
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+* **Priority**
+
+  * Reprsents task urgency: LOW → MEDIUM → HIGH → CRITICAL
+* **PetTask**
+
+  * A single care task as entered by the user
+    * stores what needs doing, how long, and how important it is
+* **Pet**
+
+  * Represents the pet
+  * Owns its task list and can sort tasks by **priority(Class)**
+  * Designed to support multiple pets per owner in the future
+* **Owner**
+
+  * Represents the human user
+    * Holds the key scheduling constraint:
+      * available_minutes_per_day
+      * preferred_schedule_start
+* **ScheduledTask**
+
+  * Wraps a **PetTask(Class)**
+  * concrete start_time, end_time, and a human-readable reason
+    * this is what makes the plan explainable
+* **DailySchedule**
+
+  * The output of the scheduler.
+  * Holds both scheduled and skipped tasks (with skip reasons)
+* **Scheduler**
+
+  * Core engine
+  * Reads constraints from Owner, reads tasks from Pet, and produces a DailySchedule.
+  * Key methods
+    * prioritize() (sort by priority + required flag)
+    * fits_in_day() (check remaining budget)
+    * schedule()
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+1. Scheduler bypasses Pet.get_tasks_by_priority()
+2. PawPalApp holds both owner and pet separately
+3. DailySchedule has no link back to Owner or Pet
+   * The schedule doesn't know whose schedule it was
+   * A owner_name/pet_name field (or a reference) was missing
+4. Scheduler.available_minutes is snapshotted at  __init_
 
 ---
 
@@ -18,13 +55,22 @@
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+What constraints does your scheduler consider (for example: time, priority, preferences)?
+
+* Time Avalability - owner available_minutes_per_day
+* Priority - CRITICAL , HIGH , MEDIUM , LOW
+* Preferred time of day
+
+1. Time and required tasks are a must because
+   * if there is no time or the task is critical  It has to happen
+2. Priority breaks ties
+3. Time-of-day preference is last because not needed to make our app work
+   * The scheduler honors it when possible but won't skip a task just because the window passed
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+- **Tradeoff: The scheduler is greedy — it fills the day in priority order and skips anything that doesn't fit, rather than finding the optimal combination of tasks that maximizes value within the time budget.**
+- **Why it's reasonable: A pet owner doesn't need a perfect schedule — they need a fast, predictable one. If medication and a walk are highest priority, those should always show up first without complex calculation. The greedy approach is also easier to explain to the user ("we ran out of time for grooming") which matters more than squeezing in one extra low-priority task.**
 
 ---
 
