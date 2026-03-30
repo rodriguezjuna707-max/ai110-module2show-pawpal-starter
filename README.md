@@ -34,6 +34,28 @@ Every `PetTask` carries a `frequency` field (`"daily"`, `"weekly"`, `"as_needed"
 ### Multi-criteria task filtering
 `Owner.filter_tasks()` queries all tasks across every pet using any combination of four optional filters: pet name, completion status, priority level, and category string (case-insensitive). All filters are composable — omitting a parameter applies no constraint for that dimension. This powers filtered views in the UI and can be used programmatically in scripts or tests.
 
+### Next available slot (gap-scanning algorithm)
+`Scheduler.find_next_available_slot(task, existing_schedule)` answers the question *"When is the earliest opening for this new task, given what is already booked?"*
+
+**Algorithm:**
+1. Collect all booked `(start, end)` intervals from `existing_schedule` and sort them by start time.
+2. Walk the gaps between consecutive booked blocks. For each gap, check whether it is at least `task.duration_minutes` wide.
+3. Return the first qualifying `(start, end)` pair, clamped to start no earlier than the task's preferred time-of-day window (e.g. `"afternoon"` → `12:00`) or the owner's `preferred_schedule_start`.
+4. If no gap fits before `21:00`, return `None`.
+
+Unlike the greedy scheduler, this method is a **pure read-only query** — it never modifies the schedule or the budget. It is exposed in the UI as the **"Find Next Available Slot"** panel, letting owners instantly see where a spontaneous new task can be inserted without disrupting the existing plan.
+
+## Agent Mode — how it was used
+
+This feature was designed and implemented in a single Claude Code session using **Agent Mode** (the agentic Claude Code CLI running in VS Code).
+
+**Workflow:**
+1. **Codebase exploration** — Claude read `pawpal_system.py`, `app.py`, `main.py`, and `README.md` in parallel to build a full mental model of the existing classes, method signatures, and UI wiring before writing a single line.
+2. **Algorithm design** — Claude identified that the existing scheduler only builds a plan in one greedy pass and has no way to answer "where does a *new* task fit in a plan that already exists?" It designed the gap-scanning approach (sort booked intervals → walk gaps → return first fit) as a clean complement to the existing logic, reusing the private `_add_minutes` helper and the `TIME_SLOTS` dict already on the class.
+3. **Multi-file editing** — Claude made coordinated edits across four files (`pawpal_system.py`, `app.py`, `main.py`, `README.md`) in one session without losing context between files, which would be error-prone when done manually.
+4. **Helper extraction** — Claude noticed that the new algorithm needed a `_minutes_between` utility not yet on the class, added it as a static method in the right private-helper section, and wired it into the new public method — all without duplicating logic already handled by `_add_minutes`.
+5. **UI integration** — Claude added a self-contained "Find Next Available Slot" panel to `app.py` that reuses existing `PRIORITY_MAP` / `TIME_OPTIONS` patterns and only appears after a schedule has been generated, matching the progressive-disclosure style of the rest of the UI.
+
 ## Testing PawPal+
 
 All tests live in a single file: `tests/test_pawpal.py`.

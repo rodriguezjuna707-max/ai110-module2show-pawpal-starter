@@ -489,6 +489,73 @@ class Scheduler:
         """Return True if the task fits within the remaining daily budget."""
         return (used_minutes + task.duration_minutes) <= budget
 
+    def find_next_available_slot(
+        self,
+        task: PetTask,
+        existing_schedule: DailySchedule,
+    ) -> Optional[tuple[str, str]]:
+        """
+        Find the earliest contiguous time window that can fit the given task
+        without overlapping any already-scheduled tasks in *existing_schedule*.
+
+        Algorithm (gap-scanning over sorted intervals):
+          1. Collect all booked ``(start, end)`` pairs from *existing_schedule*
+             and sort them by start time.
+          2. Walk the gaps between consecutive booked blocks.  For each gap,
+             check whether it is at least ``task.duration_minutes`` wide.
+          3. Return the first qualifying gap, clamped to start no earlier than
+             the task's preferred time-of-day window (if any) or the owner's
+             ``preferred_schedule_start``.  The search stops at ``"21:00"``.
+
+        Unlike ``schedule()``, this method does **not** consume the budget or
+        modify any state — it is a pure read-only query useful for answering
+        "when is the next opening for this task?" after a schedule is already
+        built.
+
+        Args:
+            task: The ``PetTask`` to find a slot for.
+            existing_schedule: A ``DailySchedule`` whose booked intervals are
+                               treated as immovable obstacles.
+
+        Returns:
+            A ``(start_time, end_time)`` tuple in ``"HH:MM"`` format if a
+            fitting gap is found, or ``None`` if no gap exists before
+            ``"21:00"``.
+        """
+        DAY_END = "21:00"
+
+        # Earliest acceptable start: owner preference or preferred time window
+        earliest = self.owner.preferred_schedule_start
+        if task.preferred_time_of_day and task.preferred_time_of_day in self.TIME_SLOTS:
+            slot_start, _ = self.TIME_SLOTS[task.preferred_time_of_day]
+            if slot_start > earliest:
+                earliest = slot_start
+
+        # Sort all booked intervals by start time
+        booked = sorted(
+            [(st.start_time, st.end_time) for st in existing_schedule.scheduled_tasks],
+            key=lambda x: x[0],
+        )
+
+        cursor = earliest
+        for booked_start, booked_end in booked:
+            # Gap between cursor and the next booked block
+            if cursor < booked_start:
+                gap = self._minutes_between(cursor, booked_start)
+                if gap >= task.duration_minutes:
+                    return (cursor, self._add_minutes(cursor, task.duration_minutes))
+            # Advance cursor past this booked block (never go backward)
+            if booked_end > cursor:
+                cursor = booked_end
+
+        # Check remaining time after the last booked task
+        if cursor < DAY_END:
+            gap = self._minutes_between(cursor, DAY_END)
+            if gap >= task.duration_minutes:
+                return (cursor, self._add_minutes(cursor, task.duration_minutes))
+
+        return None
+
     def get_tasks_by_category(self, pet: Pet, category: str) -> list[PetTask]:
         """Filter a pet's tasks by category (e.g. 'walk', 'feeding')."""
         return [t for t in pet.tasks if t.category.lower() == category.lower()]
@@ -584,6 +651,65 @@ class Scheduler:
                     )
         return warnings
 
+    def find_next_available_slot(
+        self, task: PetTask, schedule: DailySchedule
+    ) -> Optional[tuple[str, str]]:
+        """
+        Scan an existing DailySchedule for the earliest gap that fits ``task``.
+
+        Algorithm:
+          1. Collect booked (start, end) pairs and sort by start time.
+          2. Walk the gaps between consecutive booked blocks.
+          3. Return the first gap that is at least ``task.duration_minutes`` wide,
+             clamped to start no earlier than the task's preferred time-of-day
+             window (or the owner's ``preferred_schedule_start``).
+          4. Return ``None`` if no gap fits before 21:00.
+
+        This is a read-only query — it never modifies the schedule or budget.
+
+        Args:
+            task:     The new task to fit in.
+            schedule: An existing ``DailySchedule`` to scan for gaps.
+
+        Returns:
+            A ``(start, end)`` tuple of 'HH:MM' strings, or ``None``.
+        """
+        DAY_END = "21:00"
+
+        # Determine earliest this task can start
+        if task.preferred_time_of_day and task.preferred_time_of_day in self.TIME_SLOTS:
+            earliest = self.TIME_SLOTS[task.preferred_time_of_day][0]
+        else:
+            earliest = self.owner.preferred_schedule_start
+
+        # Build sorted list of booked intervals
+        booked = sorted(
+            [(st.start_time, st.end_time) for st in schedule.scheduled_tasks],
+            key=lambda x: x[0],
+        )
+
+        # Candidate gap starts: before first task, between tasks, and after last task
+        gap_starts = [earliest]
+        for _, end in booked:
+            if end > earliest:
+                gap_starts.append(end)
+
+        for gap_start in gap_starts:
+            # Find which booked task immediately follows this gap start
+            next_block_start = DAY_END
+            for start, _ in booked:
+                if start >= gap_start:
+                    next_block_start = start
+                    break
+
+            gap_minutes = self._minutes_between(gap_start, next_block_start)
+            if gap_minutes >= task.duration_minutes:
+                end = self._add_minutes(gap_start, task.duration_minutes)
+                if end <= DAY_END:
+                    return gap_start, end
+
+        return None
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -606,6 +732,13 @@ class Scheduler:
             True if the time windows overlap, False otherwise.
         """
         return a.start_time < b.end_time and b.start_time < a.end_time
+
+    @staticmethod
+    def _minutes_between(start: str, end: str) -> int:
+        """Return the number of minutes between two 'HH:MM' strings."""
+        t1 = datetime.strptime(start, "%H:%M")
+        t2 = datetime.strptime(end, "%H:%M")
+        return int((t2 - t1).total_seconds() // 60)
 
     def _add_minutes(self, time_str: str, minutes: int) -> str:
         """Add minutes to a 'HH:MM' string and return a new 'HH:MM' string."""

@@ -153,3 +153,30 @@ print("=" * 52)
 for schedule in schedules:
     print(schedule.display())
     print()
+
+# ------------------------------------------------------------------
+# Demo 6 — find_next_available_slot()
+# Ask: "When is the next opening for a 20-min afternoon teeth-cleaning
+# task given Mochi's already-generated schedule?"
+# ------------------------------------------------------------------
+print("=" * 52)
+print("  DEMO 6: find_next_available_slot()")
+print("  New task: 20-min 'Teeth cleaning' (afternoon)")
+print("=" * 52)
+
+mochi_schedule = next(s for s in schedules if s.pet_name == "Mochi")
+teeth_cleaning = PetTask(
+    title="Teeth cleaning",
+    category="grooming",
+    duration_minutes=20,
+    priority=Priority.MEDIUM,
+    preferred_time_of_day="afternoon",
+)
+
+slot = scheduler.find_next_available_slot(teeth_cleaning, mochi_schedule)
+if slot:
+    start, end = slot
+    print(f"  Next available slot: {start} – {end}")
+else:
+    print("  No available slot found in today's schedule.")
+print()

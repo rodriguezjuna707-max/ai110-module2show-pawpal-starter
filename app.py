@@ -179,3 +179,47 @@ if st.session_state.pet is not None and st.session_state.pet.tasks:
         summary_clean = plan.reasoning_summary.split("WARNING")[0].strip()
         if summary_clean:
             st.info(f"ℹ️ {summary_clean}")
+
+# ---------------------------------------------------------------------------
+# Section 4 — Find next available slot for a new task
+# ---------------------------------------------------------------------------
+if st.session_state.schedule is not None:
+    st.divider()
+    st.subheader("Find Next Available Slot")
+    st.caption(
+        "Enter a new task below and PawPal+ will scan today's schedule for "
+        "the earliest gap that fits — without moving anything already booked."
+    )
+
+    PRIORITY_MAP = {"low": Priority.LOW, "medium": Priority.MEDIUM, "high": Priority.HIGH, "critical": Priority.CRITICAL}
+    TIME_OPTIONS = [None, "morning", "afternoon", "evening"]
+
+    s_col1, s_col2, s_col3 = st.columns(3)
+    with s_col1:
+        slot_title = st.text_input("New task name", value="Teeth cleaning", key="slot_title")
+    with s_col2:
+        slot_duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20, key="slot_duration")
+    with s_col3:
+        slot_time = st.selectbox("Preferred time of day", TIME_OPTIONS, key="slot_time")
+
+    if st.button("Find slot"):
+        probe = PetTask(
+            title=slot_title,
+            category="general",
+            duration_minutes=int(slot_duration),
+            priority=Priority.MEDIUM,
+            preferred_time_of_day=slot_time,
+        )
+        scheduler = Scheduler(st.session_state.owner)
+        result = scheduler.find_next_available_slot(probe, st.session_state.schedule)
+        if result:
+            start, end = result
+            st.success(
+                f"**Next available slot for '{slot_title}':** `{start} – {end}` "
+                f"({slot_duration} min)"
+            )
+        else:
+            st.warning(
+                f"No gap found for a {slot_duration}-min task before 21:00. "
+                "Try reducing the duration or freeing up time in your schedule."
+            )
