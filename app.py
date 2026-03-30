@@ -83,11 +83,31 @@ if st.session_state.pet is not None:
         st.session_state.schedule = None   # stale schedule — force regeneration
         st.success(f"Added task: {task_title}")
 
-    # Show current task list
+    # Show current task list sorted by preferred time of day (morning → afternoon → evening)
     current_tasks = st.session_state.pet.tasks
     if current_tasks:
-        st.markdown("**Current tasks:**")
-        st.table([t.to_dict() for t in current_tasks])
+        st.markdown("**Current tasks (sorted by time of day):**")
+        scheduler = Scheduler(st.session_state.owner)
+        sorted_tasks = scheduler.sort_by_time(current_tasks)
+
+        PRIORITY_ICON = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
+        TIME_ICON = {"morning": "🌅 Morning", "afternoon": "☀️ Afternoon", "evening": "🌙 Evening"}
+
+        header = st.columns([2, 1, 1, 1, 1])
+        header[0].markdown("**Task**")
+        header[1].markdown("**Priority**")
+        header[2].markdown("**Duration**")
+        header[3].markdown("**Time slot**")
+        header[4].markdown("**Required**")
+        st.divider()
+
+        for task in sorted_tasks:
+            col = st.columns([2, 1, 1, 1, 1])
+            col[0].write(task.title)
+            col[1].write(f"{PRIORITY_ICON.get(task.priority.name, '')} {task.priority.name}")
+            col[2].write(f"{task.duration_minutes} min")
+            col[3].write(TIME_ICON.get(task.preferred_time_of_day, "—"))
+            col[4].write("Yes" if task.is_required else "—")
     else:
         st.info("No tasks yet. Add one above.")
 
@@ -105,21 +125,57 @@ if st.session_state.pet is not None and st.session_state.pet.tasks:
 
     if st.session_state.schedule is not None:
         plan = st.session_state.schedule
-        st.markdown(f"**{plan.date} — {plan.pet_name}** ({plan.total_minutes_used} min used)")
+        budget = st.session_state.owner.available_minutes_per_day
+        minutes_left = budget - plan.total_minutes_used
 
+        # Summary metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Time used", f"{plan.total_minutes_used} min", delta=f"-{minutes_left} min remaining")
+        m2.metric("Tasks scheduled", len(plan.scheduled_tasks))
+        m3.metric("Tasks skipped", len(plan.skipped_tasks))
+
+        # Conflict warnings — rephrased for a pet owner, not a developer
+        conflict_scheduler = Scheduler(st.session_state.owner)
+        conflicts = conflict_scheduler.detect_conflicts(plan)
+        for raw_msg in conflicts:
+            # Extract the two task names from the message for a friendlier summary
+            # Message format: "WARNING [PetName]: 'TaskA' (HH:MM-HH:MM) overlaps 'TaskB' ..."
+            parts = raw_msg.split("'")
+            if len(parts) >= 4:
+                task_a, task_b = parts[1], parts[3]
+                st.warning(
+                    f"**Scheduling conflict:** **{task_a}** and **{task_b}** overlap — "
+                    f"both are scheduled at the same time. Consider reducing one task's duration, "
+                    f"changing its preferred time slot, or lowering its priority so the scheduler "
+                    f"can fit them without overlap.",
+                    icon="⚠️",
+                )
+            else:
+                st.warning(raw_msg, icon="⚠️")
+
+        # Scheduled tasks
         if plan.scheduled_tasks:
-            st.markdown("**Scheduled:**")
+            st.markdown("**Scheduled tasks:**")
+            PRIORITY_ICON = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
             for st_task in plan.scheduled_tasks:
-                st.markdown(
-                    f"- `{st_task.start_time}-{st_task.end_time}` &nbsp; "
-                    f"**{st_task.task.title}** ({st_task.task.duration_minutes} min) "
-                    f"[{st_task.task.priority.name}]"
+                icon = PRIORITY_ICON.get(st_task.task.priority.name, "")
+                badge = " ✅ **Required**" if st_task.task.is_required else ""
+                st.success(
+                    f"`{st_task.start_time} – {st_task.end_time}`  "
+                    f"{icon} **{st_task.task.title}** ({st_task.task.duration_minutes} min){badge}"
                 )
 
+        # Skipped tasks — severity depends on whether the task was required
         if plan.skipped_tasks:
-            st.markdown("**Skipped (not enough time):**")
+            st.markdown("**Could not fit into today's schedule:**")
             for task, reason in plan.skipped_tasks:
-                st.markdown(f"- ~~{task.title}~~ — {reason}")
+                msg = f"**{task.title}** — {reason}"
+                if task.is_required or task.priority.name == "CRITICAL":
+                    st.error(f"⛔ {msg} *(this task is marked required — consider freeing up time)*")
+                else:
+                    st.warning(f"⏭️ {msg}")
 
-        if plan.reasoning_summary:
-            st.info(plan.reasoning_summary)
+        # Reasoning summary (conflict detail already shown above — strip duplicates)
+        summary_clean = plan.reasoning_summary.split("WARNING")[0].strip()
+        if summary_clean:
+            st.info(f"ℹ️ {summary_clean}")

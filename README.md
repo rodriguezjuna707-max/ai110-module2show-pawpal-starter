@@ -1,26 +1,10 @@
-# PawPal+ (Module 2 Project)
+# PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that helps busy pet owners plan and prioritize their daily pet care. Enter your available time, add tasks with priorities and durations, and the scheduler builds an optimized daily plan — explaining every decision along the way.
 
-## Scenario
+## 📸 Demo
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
-
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
-
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
-
-## What you will build
-
-Your final app should:
-
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
 
 ## Getting started
 
@@ -30,26 +14,25 @@ Your final app should:
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+streamlit run app.py
 ```
 
-### Suggested workflow
+## Features
 
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
+### Priority-based greedy scheduling
+`Scheduler.schedule()` builds a daily plan in a single pass through the task list. Tasks are ranked by four criteria in order: required flag first, then priority level (CRITICAL → LOW), then preferred time of day (morning → afternoon → evening), then shortest duration as a tiebreaker. The scheduler fills the owner's time budget greedily — any task that doesn't fit is recorded as skipped with a plain-English reason rather than silently dropped.
 
-## Smarter Scheduling
+### Chronological display sorting
+`Scheduler.sort_by_time()` reorders a task list by preferred time slot (morning → afternoon → evening → no preference) independently of scheduling priority. This is used in the UI task table so owners see their day laid out in the natural flow of the day, even if a low-priority morning task would be outranked by a high-priority evening task in the scheduler.
 
-Four algorithmic improvements were added to make the scheduler more realistic:
+### Recurring task support
+Every `PetTask` carries a `frequency` field (`"daily"`, `"weekly"`, `"as_needed"`). `PetTask.is_due_today()` checks whether a task should appear in the current day's pending list based on its frequency and last completion date. When a recurring task is marked complete via `Pet.complete_task()`, a new copy is automatically appended to the pet's task list with `next_due_date` set forward by `timedelta(days=1)` (daily) or `timedelta(days=7)` (weekly), so the next occurrence is always queued without manual re-entry.
 
-- **Sort by time** — `Scheduler.sort_by_time()` orders tasks morning → afternoon → evening for display, separate from priority-based scheduling order.
-- **Filter tasks** — `Owner.filter_tasks()` queries tasks across all pets by pet name, completion status, priority, or category in any combination.
-- **Recurring tasks** — `PetTask.is_due_today()` respects the `frequency` field (`"daily"`, `"weekly"`, `"as_needed"`). Completing a recurring task via `Pet.complete_task()` automatically creates the next occurrence with a `next_due_date` calculated using `timedelta`.
-- **Conflict detection** — `Scheduler.detect_conflicts()` checks a single pet's schedule for overlapping time windows; `Scheduler.detect_cross_pet_conflicts()` checks across all pets. Both return warning strings rather than raising exceptions.
+### Conflict detection
+`Scheduler.detect_conflicts()` scans a single pet's generated schedule for overlapping time windows using the standard half-open interval test (`a.start < b.end AND b.start < a.end`). Adjacent tasks (one ends exactly when the next begins) are not flagged. `Scheduler.detect_cross_pet_conflicts()` extends this to compare scheduled slots across all pets belonging to the same owner — useful when one person cares for multiple animals whose tasks compete for the same time. Both methods return human-readable warning strings rather than raising exceptions, so the UI can display them without crashing.
+
+### Multi-criteria task filtering
+`Owner.filter_tasks()` queries all tasks across every pet using any combination of four optional filters: pet name, completion status, priority level, and category string (case-insensitive). All filters are composable — omitting a parameter applies no constraint for that dimension. This powers filtered views in the UI and can be used programmatically in scripts or tests.
 
 ## Testing PawPal+
 

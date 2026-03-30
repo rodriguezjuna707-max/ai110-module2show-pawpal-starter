@@ -78,13 +78,14 @@ What constraints does your scheduler consider (for example: time, priority, pref
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+- Used AI for initial UML brainstorming, class skeleton generation, and docstring drafting
+- Most helpful prompts were specific and structural: "given these attributes and methods, generate a Mermaid class diagram" and "write a `next_occurrence` method that returns a fresh copy with `next_due_date` set using `timedelta`"
+- Debugging prompts that included the actual error message and the relevant function got faster, more accurate fixes
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+- AI initially suggested `Scheduler` snapshot `available_minutes` at `__init__` — rejected this because it would silently use a stale budget if the owner's availability changed mid-session; kept it as a live read from `self.owner.available_minutes_per_day`
+- Verified suggestions by running the test suite and tracing through edge cases manually (e.g., adjacent tasks, weekly recurrence boundary at exactly 7 days)
 
 ---
 
@@ -92,13 +93,15 @@ What constraints does your scheduler consider (for example: time, priority, pref
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+- Task completion / reset, recurrence (daily/weekly/as_needed), `is_due_today` boundary conditions
+- Priority and time-of-day sort order, required-task-first scheduling, budget enforcement, skip tracking
+- Single-pet and cross-pet conflict detection (overlapping, adjacent, non-overlapping cases)
+- These covered the three most likely failure modes: wrong priority order, silent budget overflow, and missed conflict warnings
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+- High confidence in the core happy paths — 38 tests pass covering all seven feature areas
+- Would add next: tasks that span midnight, owners with 0-minute budgets, and filter_tasks with combined criteria across many pets
 
 ---
 
@@ -106,12 +109,13 @@ What constraints does your scheduler consider (for example: time, priority, pref
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+- The `ScheduledTask` + `DailySchedule` output design — wrapping tasks with concrete times and a `reason` string made both the UI and test assertions straightforward
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+- Add `owner_name` / `pet_name` back-references to `ScheduledTask` so conflict warnings don't have to carry that context as strings
+- Make the greedy scheduler aware of total cross-pet minutes, not just per-pet budget
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+- AI speeds up boilerplate and structure, but the decisions that matter — what to snapshot vs. read live, when adjacent tasks should or shouldn't conflict — still require a human to catch and push back on
